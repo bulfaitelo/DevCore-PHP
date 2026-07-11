@@ -1,78 +1,88 @@
+name: ${COMPOSE_PROJECT_NAME:-docker_dev_web}
+
 networks:
-  localhost:
-    driver: 'bridge'
+  devnet:
+    name: ${DOCKER_NETWORK_NAME:-docker_dev_web_net}
+    driver: bridge
 
 services:
-  app:     
-    build: 
+  app:
+    build:
       context: ./
-      dockerfile: docker/app/Dockerfile.php.8.3
-      args:        
-        - NODE_JS=${APP_NODE_JS}
-        - SQL_SERVER=${APP_SQL_SERVER}        
-    container_name: app        
+      dockerfile: ${APP_DOCKERFILE:-docker/app/Dockerfile.php.8.4}
+      args:
+        UID: ${APP_UID:-1000}
+        GID: ${APP_GID:-1000}
+        APP_NODE_JS: ${APP_NODE_JS:-true}
+        APP_SQL_SERVER: ${APP_SQL_SERVER:-false}
+        TZ: ${TZ:-America/Sao_Paulo}
+    container_name: ${APP_CONTAINER_NAME:-app}
     tty: true
-    dns: 
-      - ${APP_DNS_1:-127.0.0.1}
-      - ${APP_DNS_2:-127.0.0.1}
-    ports: 
-      - "${APP_PORT_PUBLISHED_1:-80}:80"
-      - "${APP_PORT_PUBLISHED_2:-8000}:8000"      
-      - "${APP_PORT_PUBLISHED_3:-9000}:9000"      
-      - "${APP_PORT_PUBLISHED_4:-9001}:9001"      
+    ports:
+      - "${APP_PORT_HTTP:-8080}:80"
+      - "${APP_PORT_LARAVEL:-8000}:8000"
+      - "${APP_PORT_FPM:-9000}:9000"
     volumes:
-      - ./conf/app/php/php.ini-development:/usr/local/etc/php/php.ini
-      - ./conf/app/ssl/openssl.cnf:/etc/ssl/openssl.cnf
+      - ./conf/app/php/php.ini-development:/usr/local/etc/php/php.ini:ro
+      - ./conf/app/ssl/openssl.cnf:/etc/ssl/openssl.cnf:ro
       - ./www:/var/www:rw
-      - ./conf/app/vhost:/etc/apache2/sites-enabled
-      - ./conf/ubuntu/bashrc.bash:/root/.bashrc
-      - ./conf/ubuntu/bashrc.bash:/home/app/.bashrc      
-      - ./conf/ubuntu/:/home/app/:rw
-      - ./conf/ubuntu/:/root/:rw
-      # - ./logs/app:/var/log/apache2
+      - ./conf/app/vhost:/etc/apache2/sites-enabled:ro
+      - ./conf/ubuntu/bashrc.bash:/root/.bashrc:ro
+      - ./conf/ubuntu/bashrc.bash:/home/app/.bashrc:ro
       - ./logs/php:/tmp/php
       - ./logs/cron:/var/log/cron
     environment:
-      - TZ=America/Sao_Paulo
-      - APACHE_LOG_DIR=/tmp
-      - INSTALL_DIR=/var/www
+      TZ: ${TZ:-America/Sao_Paulo}
+      APACHE_LOG_DIR: /tmp
+      INSTALL_DIR: /var/www
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql_db:
+        condition: service_healthy
     networks:
-      - localhost
-    # depends_on:
-    #   - mysql_db
-    restart: always
+      - devnet
+    restart: unless-stopped
 
   mysql_db:
-    build: docker/mysql    
-    container_name: mysql_db
-    restart: always
+    build:
+      context: docker/mysql
+    container_name: ${MYSQL_CONTAINER_NAME:-mysql_db}
+    restart: unless-stopped
     tty: true
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - ./dbdata:/var/lib/mysql
-      - ./conf/mysql/my.cnf:/etc/mysql/conf.d/config-file.cnf
-    environment:      
-      - MYSQL_ROOT_PASSWORD=root
-      - TZ=America/Sao_Paulo
-    # command: ["mysqld", "--skip-grant-tables"]  
+      - ${DB_DATA_DIR:-./dbdata}:/var/lib/mysql
+      - ./conf/mysql/my.cnf:/etc/mysql/conf.d/config-file.cnf:ro
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app}
+      MYSQL_USER: ${MYSQL_USER:-app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-app}
+      TZ: ${TZ:-America/Sao_Paulo}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks:
-      - localhost
+      - devnet
 
   phpmyadmin:
-    build: docker/phpmyadmin
-    container_name: phpmyadmin
-    links:
-      - mysql_db
-    restart: always
+    build:
+      context: docker/phpmyadmin
+    container_name: ${PHPMYADMIN_CONTAINER_NAME:-phpmyadmin}
+    restart: unless-stopped
     ports:
-      - "${PHPMYADMIN_PORT_PUBLISHED:-8080}:80"
+      - "${PHPMYADMIN_PORT:-8081}:80"
     environment:
-      - PMA_HOST=mysql_db
-      - PMA_PORT=3306
-      - PMA_ARBITRARY=0
-      - UPLOAD_LIMIT=128M
-    networks:
-      - localhost
+      PMA_HOST: ${PMA_HOST:-mysql_db}
+      PMA_PORT: ${PMA_PORT:-3306}
+      PMA_ARBITRARY: ${PMA_ARBITRARY:-0}
+      UPLOAD_LIMIT: ${PHPMYADMIN_UPLOAD_LIMIT:-128M}
     depends_on:
-      - mysql_db
+      mysql_db:
+        condition: service_healthy
+    networks:
+      - devnet

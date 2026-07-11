@@ -1,0 +1,120 @@
+ARG PHP_IMAGE=php:8.4-apache-bookworm
+
+FROM ${PHP_IMAGE} AS php-ext-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        $PHPIZE_DEPS \
+        libicu-dev \
+        libzip-dev \
+        zlib1g-dev \
+        libpng-dev \
+        libjpeg62-turbo-dev \
+        libfreetype6-dev \
+        libonig-dev \
+        libxml2-dev \
+        libssl-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j"$(nproc)" \
+        pdo_mysql \
+        mbstring \
+        zip \
+        intl \
+        bcmath \
+        pcntl \
+        exif \
+        gd \
+        opcache \
+    && pecl install xdebug \
+    && docker-php-ext-enable xdebug \
+    && rm -rf /tmp/pear \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM ${PHP_IMAGE} AS app
+
+ARG UID=1000
+ARG GID=1000
+ARG APP_NODE_JS=true
+ARG APP_SQL_SERVER=false
+ARG TZ=America/Sao_Paulo
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=${TZ} \
+    APP_NODE_JS=${APP_NODE_JS} \
+    APP_SQL_SERVER=${APP_SQL_SERVER}
+
+RUN addgroup --gid ${GID} --system app \
+    && useradd -u ${UID} -g ${GID} -G 0,33 -s /bin/bash -m -d /home/app app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tzdata \
+        cron \
+        supervisor \
+        default-mysql-client \
+        ca-certificates \
+        curl \
+        gnupg \
+        git \
+        unzip \
+        vim \
+        libicu-dev \
+        libzip-dev \
+        zlib1g \
+        libpng16-16 \
+        libjpeg62-turbo \
+        libfreetype6 \
+        libonig5 \
+        libxml2 \
+        libssl3 \
+        unixodbc
+
+COPY --from=php-ext-builder /usr/local/lib/php/extensions /usr/local/lib/php/extensions
+COPY --from=php-ext-builder /usr/local/etc/php/conf.d /usr/local/etc/php/conf.d
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
+RUN if [ "$APP_NODE_JS" = "true" ]; then \
+      mkdir -p /etc/apt/keyrings \
+      && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+      && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+      && apt-get update \
+      && apt-get install -y --no-install-recommends nodejs; \
+    fi
+
+RUN if [ "$APP_SQL_SERVER" = "true" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends $PHPIZE_DEPS unixodbc-dev \
+      && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+      && echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
+      && apt-get update \
+      && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 mssql-tools18 \
+      && pecl install sqlsrv pdo_sqlsrv \
+      && docker-php-ext-enable sqlsrv pdo_sqlsrv \
+      && apt-get purge -y --auto-remove $PHPIZE_DEPS unixodbc-dev; \
+    fi
+
+COPY conf/crontab/cron /etc/cron.d/cron
+RUN crontab /etc/cron.d/cron
+
+COPY conf/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+RUN chmod 755 /etc/supervisor/conf.d/supervisord.conf
+
+RUN a2enmod rewrite proxy headers lbmethod_byrequests \
+    && a2dissite 000-default \
+    && rm -rf /var/www/html \
+    && mkdir -p /tmp/php /var/log/cron \
+    && chown -R app:app /var/www /home/app
+
+RUN apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+WORKDIR /var/www
+
+EXPOSE 80 8000 9000
+
+CMD ["/usr/bin/supervisord", "-n"]

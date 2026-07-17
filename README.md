@@ -4,8 +4,12 @@
 
 Ambiente de desenvolvimento com PHP, Composer, Apache2, Mysql, phpMyAdmin e Node, dentro do Ubuntu Server.
 
-  
-  
+## Documentacao de uso
+
+Para uma visao completa de parametros, variaveis de ambiente, portas e troubleshooting, veja o guia:
+
+- docs/GUIA-CONTAINER.md
+
 
 ## Instalação:
 

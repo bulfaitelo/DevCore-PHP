@@ -1,8 +1,8 @@
-name: ${COMPOSE_PROJECT_NAME:-docker_dev_web}
+name: ${COMPOSE_PROJECT_NAME:-devcore_php}
 
 networks:
   devnet:
-    name: ${DOCKER_NETWORK_NAME:-docker_dev_web_net}
+    name: ${DOCKER_NETWORK_NAME:-devcore_php_net}
     driver: bridge
 
 services:

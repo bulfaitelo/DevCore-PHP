@@ -1,4 +1,4 @@
-# Docker_Dev_Web
+# DevCore-PHP
 
   
 
@@ -15,7 +15,7 @@ Para realizar a instalação basta realizar a clonagem do repositório.
 
   
 
-	gh repo clone bulfaitelo/Docker_Dev_Web
+	gh repo clone bulfaitelo/DevCore-PHP
 
   
 
@@ -23,7 +23,7 @@ Para realizar a instalação basta realizar a clonagem do repositório.
 
   
 
-	git clone https://github.com/bulfaitelo/Docker_Dev_Web.git
+	git clone https://github.com/bulfaitelo/DevCore-PHP.git
 
   
 
